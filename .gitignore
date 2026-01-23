@@ -1,0 +1,6 @@
+.vs/
+build/
+examples/
+resources/
+out/
+compile_commands.json

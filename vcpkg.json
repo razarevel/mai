@@ -1,0 +1,11 @@
+{
+  "name": "mai",
+  "version": "0.1.0",
+  "dependencies": [
+    "glfw3",
+    "vulkan-memory-allocator",
+		"glslang",
+		"assimp"
+  ]
+}
+
