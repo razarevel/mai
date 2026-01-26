@@ -52,3 +52,5 @@ target_link_libraries(mai
 add_subdirectory(examples/1.helloWorld)
 add_subdirectory(examples/2.GLM)
 add_subdirectory(examples/3.buffer)
+add_subdirectory(examples/4.textures)
+add_subdirectory(examples/5.cubemap)
