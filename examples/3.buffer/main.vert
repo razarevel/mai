@@ -1,0 +1,16 @@
+#version 460 core
+
+layout(push_constant) uniform PerFrameData {
+    mat4 MVP;
+    uint tex;
+};
+
+layout(location = 0) in vec3 pos;
+layout(location = 1) in vec2 uv;
+
+layout(location = 0) out vec2 uvs;
+
+void main() {
+    gl_Position = MVP * vec4(pos, 1.0);
+    uvs = uv;
+}
