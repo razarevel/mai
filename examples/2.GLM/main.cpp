@@ -1,3 +1,4 @@
+#include "mai_config.h"
 #include "mai_vk.h"
 
 #include <glm/ext.hpp>

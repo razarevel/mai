@@ -1,4 +1,4 @@
-#define MAI_USE_VMA
+#include "mai_config.h"
 #include "mai_vk.h"
 
 #include <glm/ext.hpp>
@@ -37,7 +37,7 @@ int main() {
     int w, h, comp;
     const stbi_uc *pixel =
         stbi_load(RESOURCES_PATH "wood.jpg", &w, &h, &comp, 4);
-    assert(pixel);
+    assert(pixel && "not found");
     texture = ren->createImage({
         .type = MAI::TextureType_2D,
         .format = MAI::Format_RGBA_S8,

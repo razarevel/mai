@@ -1,9 +1,5 @@
-#define MAI_USE_VMA
+#include "mai_config.h"
 #include "mai_vk.h"
-
-#include <assimp/cimport.h>
-#include <assimp/postprocess.h>
-#include <assimp/scene.h>
 
 #include <glm/ext.hpp>
 #include <glm/glm.hpp>

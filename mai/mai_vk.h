@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <optional>
@@ -137,6 +138,8 @@ struct Renderer {
   struct Shader *createShader(const char *fileName,
                               ShaderStage stage = ShaderStage::NONE);
   struct Pipeline *createPipeline(const struct PipelineInfo &info);
+  struct Pipeline *
+  createComputePipeline(const struct ComputePipelineInfo &info);
   struct Buffer *createBuffer(const struct BufferInfo &info);
   struct Texture *createImage(const struct TextureInfo &info);
 
@@ -173,6 +176,7 @@ struct CommandBuffer {
   void cmdBeginRendering(const struct BeginInfo &info);
   void cmdEndRendering();
   void bindPipeline(Pipeline *pipeline);
+  void bindComputePipeline(Pipeline *pipeline);
   void bindVertexBuffer(uint32_t firstBinding, Buffer *buffer,
                         uint32_t offset = 0);
   void bindIndexBuffer(Buffer *buffer, VkDeviceSize offset,
@@ -185,6 +189,7 @@ struct CommandBuffer {
   void cmdBindDepthState(const struct DepthState &depthInfo);
   void cmdPushConstant(const void *push,
                        uint32_t size = GENERAL_PUSHCONSTANT_SIZE);
+  void cmdDispatchThreadGroups(const struct DispatchThreadInfo &info);
 
   void update(struct Buffer *buffer, const void *data, size_t size);
 
@@ -322,6 +327,11 @@ struct DepthState {
   bool depthWriteEnable = false;
   CompareOp compareOp = CompareOp::Always;
 };
+struct DispatchThreadInfo {
+  uint32_t width = 1;
+  uint32_t height = 1;
+  uint32_t depth = 1;
+};
 
 struct VertexAttribute {
   uint32_t binding = 0;
@@ -369,6 +379,13 @@ struct PipelineInfo {
   CullMode cullMode = CullMode::None;
   PrimitiveTopology topology = PrimitiveTopology::Triangle_List;
   PolygonMode polygon = PolygonMode::Fill;
+  uint32_t pushConstantSize = GENERAL_PUSHCONSTANT_SIZE;
+};
+
+struct ComputePipelineInfo {
+  VertexInput *vertexInput;
+  Shader *comp;
+  SpecInfo specInfo;
   uint32_t pushConstantSize = GENERAL_PUSHCONSTANT_SIZE;
 };
 
@@ -532,7 +549,7 @@ struct Texture {
 private:
   VkDevice &device;
   VmaAllocator &allocator;
-  VkFormat format_;
+  VkFormat format_ = VK_FORMAT_UNDEFINED;
   VkImage image_ = VK_NULL_HANDLE;
   VmaAllocation alloc_ = VK_NULL_HANDLE;
   VkImageView view_ = VK_NULL_HANDLE;
@@ -598,7 +615,7 @@ Renderer *initVulkanWithSwapChain(GLFWwindow *window = nullptr,
 
 }; // namespace MAI
 
-#ifdef MAI_IMPLEMENTATION
+// #ifdef MAI_IMPLEMENTATION
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -610,7 +627,7 @@ Renderer *initVulkanWithSwapChain(GLFWwindow *window = nullptr,
 namespace MAI {
 
 constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
-constexpr uint32_t MAX_TEXTURES = 4060;
+constexpr uint32_t MAX_TEXTURES = 1024;
 constexpr uint32_t GENERAL_PUSHCONSTANT_SIZE = 256;
 
 struct SwapChainSupportDetails {
@@ -971,6 +988,62 @@ struct Pipeline *Renderer::createPipeline(const struct PipelineInfo &info_) {
   return pipline;
 }
 
+struct Pipeline *
+Renderer::createComputePipeline(const struct ComputePipelineInfo &info) {
+  if (info.comp->getShaderStage() != MAI::Comp) {
+    std::cerr << "shader isn't a compute shader " << std::endl;
+    assert(false);
+  }
+
+  std::vector<VkSpecializationMapEntry> entries;
+  const bool hasSpec = !info.specInfo.enteries.empty();
+  VkSpecializationInfo specInfo;
+
+  if (hasSpec) {
+    entries.reserve(info.specInfo.enteries.size());
+    uint32_t offset = 0;
+    for (auto &spec : info.specInfo.enteries) {
+      entries.emplace_back(VkSpecializationMapEntry{
+          .constantID = spec.constantID,
+          .offset = offset,
+          .size = spec.size,
+      });
+      offset += spec.size;
+    }
+
+    specInfo = {
+        .mapEntryCount = static_cast<uint32_t>(entries.size()),
+        .pMapEntries = entries.data(),
+        .dataSize = info.specInfo.dataSize,
+        .pData = info.specInfo.data,
+    };
+  }
+
+  VkPipelineLayout layout = ctx->createPipelineLayout(info.pushConstantSize);
+
+  VkPipelineShaderStageCreateInfo computeStage = {
+      .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+      .stage = VK_SHADER_STAGE_COMPUTE_BIT,
+      .module = info.comp->getShader(),
+      .pName = "main",
+      .pSpecializationInfo = hasSpec ? &specInfo : nullptr,
+  };
+
+  VkComputePipelineCreateInfo pipelineInfo{
+      .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+      .stage = computeStage,
+      .layout = layout,
+  };
+
+  VkPipeline pipeline;
+  if (vkCreateComputePipelines(ctx->device, VK_NULL_HANDLE, 1, &pipelineInfo,
+                               nullptr, &pipeline) != VK_SUCCESS)
+    throw std::runtime_error("failed to create compute pipeline");
+
+  Pipeline *pm = new Pipeline(ctx->device, pipeline, layout);
+  return pm;
+}
+
 struct Buffer *Renderer::createBuffer(const struct BufferInfo &info) {
   VkBufferUsageFlags usageFlags =
       info.storage == BufferStorage::StorageType_Device
@@ -1040,6 +1113,7 @@ struct Buffer *Renderer::createBuffer(const struct BufferInfo &info) {
 
 struct Texture *Renderer::createImage(const struct TextureInfo &info) {
   VkFormat format_ = getFormat(info.format);
+
   VkDeviceSize imageSize = info.dimensions.width * info.dimensions.height * 4;
   uint32_t layerCount = 1;
 
@@ -1339,6 +1413,20 @@ void CommandBuffer::bindPipeline(Pipeline *pipeline) {
   }
 }
 
+void CommandBuffer::bindComputePipeline(Pipeline *pipeline) {
+  assert(pipeline->getPipeline() != VK_NULL_HANDLE);
+  lastBindPipline = pipeline;
+  if (lastBindPipline != nullptr) {
+    vkCmdBindPipeline(ctx->commandBuffers[ctx->frameIndex],
+                      VK_PIPELINE_BIND_POINT_COMPUTE,
+                      lastBindPipline->getPipeline());
+    vkCmdBindDescriptorSets(ctx->commandBuffers[ctx->frameIndex],
+                            VK_PIPELINE_BIND_POINT_COMPUTE,
+                            lastBindPipline->getPipelineLayout(), 0, 1,
+                            &ctx->descriptorSets[ctx->frameIndex], 0, nullptr);
+  }
+}
+
 void CommandBuffer::bindVertexBuffer(uint32_t firstBinding, Buffer *buffer,
                                      uint32_t offset) {
   VkBuffer vertexBuffer[] = {buffer->getBuffer()};
@@ -1383,6 +1471,12 @@ void CommandBuffer::cmdPushConstant(const void *push, uint32_t size) {
   vkCmdPushConstants(ctx->commandBuffers[ctx->frameIndex],
                      lastBindPipline->getPipelineLayout(), VK_SHADER_STAGE_ALL,
                      0, size, push);
+}
+
+void CommandBuffer::cmdDispatchThreadGroups(
+    const struct DispatchThreadInfo &info) {
+  vkCmdDispatch(ctx->commandBuffers[ctx->frameIndex], info.width, info.height,
+                info.depth);
 }
 
 void CommandBuffer::update(struct Buffer *buffer, const void *data,
@@ -1494,16 +1588,17 @@ void Renderer::submit() {
   uint32_t frameIndex = ctx->frameIndex;
 
   VkSemaphore waitSemaphore[] = {ctx->imageAvailableSemaphore[frameIndex]};
-  VkSemaphore signalSemaphore[] = {ctx->renderFinishSemaphore[frameIndex]};
+  VkSemaphore signalSemaphore[] = {ctx->renderFinishSemaphore[ctx->imageIndex]};
   VkCommandBuffer &commandBuffer = ctx->commandBuffers[frameIndex];
 
   VkPipelineStageFlags waitStages[] = {
+      VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
   };
 
   VkSubmitInfo submitInfo = {
       .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-      .waitSemaphoreCount = 1,
+      .waitSemaphoreCount = 2,
       .pWaitSemaphores = waitSemaphore,
       .pWaitDstStageMask = waitStages,
       .commandBufferCount = 1,
@@ -1597,7 +1692,6 @@ VulkanContext::VulkanContext(GLFWwindow *window, const char *name)
 
   createCommandPool();
   createCommandBuffer();
-
   createDescriptorPool();
   createDescriptorSetLayout();
   createDescriptorSets();
@@ -1662,7 +1756,8 @@ QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device,
   vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamiliesCount,
                                            queueFamilyProperties.data());
   for (uint32_t i = 0; i < queueFamiliesCount; i++) {
-    if (queueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+    if ((queueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
+        (queueFamilyProperties[i].queueFlags & VK_QUEUE_COMPUTE_BIT))
       indices.graphcisFamily = i;
 
     VkBool32 supported = false;
@@ -1808,6 +1903,7 @@ void VulkanContext::createLogicalDevice() {
 
 #ifdef MAI_USE_VMA
 void VulkanContext::createVmaAllocation() {
+  std::cout << "VMA is enabled" << std::endl;
   VmaAllocatorCreateInfo createInfo{
       .flags = VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT |
                VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT,
@@ -1910,7 +2006,7 @@ void VulkanContext::recreateSwapChain() {
 
 void VulkanContext::createSyncObj() {
   imageAvailableSemaphore.resize(MAX_FRAMES_IN_FLIGHT);
-  renderFinishSemaphore.resize(MAX_FRAMES_IN_FLIGHT);
+  renderFinishSemaphore.resize(swapChainImages.size());
   drawFences.resize(MAX_FRAMES_IN_FLIGHT);
 
   VkSemaphoreCreateInfo semaphoreInfo = {
@@ -1921,11 +2017,14 @@ void VulkanContext::createSyncObj() {
       .flags = VK_FENCE_CREATE_SIGNALED_BIT,
   };
 
+  for (size_t i = 0; i < swapChainImages.size(); i++)
+    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr,
+                          &renderFinishSemaphore[i]) != VK_SUCCESS)
+      throw std::runtime_error("failed to create renderSemaphore");
+
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     if (vkCreateSemaphore(device, &semaphoreInfo, nullptr,
                           &imageAvailableSemaphore[i]) ||
-        vkCreateSemaphore(device, &semaphoreInfo, nullptr,
-                          &renderFinishSemaphore[i]) ||
         vkCreateFence(device, &fenceInfo, nullptr, &drawFences[i]) !=
             VK_SUCCESS)
       throw std::runtime_error("failed to create fence");
@@ -1958,6 +2057,24 @@ void VulkanContext::createCommandBuffer() {
 }
 
 void VulkanContext::createDescriptorPool() {
+  VkDescriptorPoolSize poolSize[] = {
+      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_TEXTURES * MAX_FRAMES_IN_FLIGHT},
+      {VK_DESCRIPTOR_TYPE_SAMPLER, MAX_TEXTURES * MAX_FRAMES_IN_FLIGHT},
+      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_TEXTURES * MAX_FRAMES_IN_FLIGHT},
+  };
+  VkDescriptorPoolCreateInfo poolInfo{
+      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+      .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
+      .maxSets = MAX_FRAMES_IN_FLIGHT,
+      .poolSizeCount = 3,
+      .pPoolSizes = poolSize,
+  };
+  if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) !=
+      VK_SUCCESS)
+    throw std::runtime_error("failed to create descritptor fool");
+}
+
+void VulkanContext::createDescriptorSetLayout() {
   std::vector<VkDescriptorBindingFlags> bindingFlags = {
       // binding 0
       // (2D texture)
@@ -1973,26 +2090,25 @@ void VulkanContext::createDescriptorPool() {
           VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT,
       VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT,
   };
-
   std::vector<VkDescriptorSetLayoutBinding> uboLayout({
       // 2d textures
       {
           .binding = 0,
           .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-          .descriptorCount = MAX_TEXTURES * MAX_FRAMES_IN_FLIGHT,
+          .descriptorCount = MAX_TEXTURES,
           .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
       },
       {
           .binding = 1,
           .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER,
-          .descriptorCount = MAX_TEXTURES * MAX_FRAMES_IN_FLIGHT,
+          .descriptorCount = MAX_TEXTURES,
           .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
       },
       // cubemap
       {
           .binding = 2,
           .descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
-          .descriptorCount = MAX_TEXTURES * MAX_FRAMES_IN_FLIGHT,
+          .descriptorCount = MAX_TEXTURES,
           .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
       },
   });
@@ -2003,7 +2119,6 @@ void VulkanContext::createDescriptorPool() {
       .bindingCount = static_cast<uint32_t>(bindingFlags.size()),
       .pBindingFlags = bindingFlags.data(),
   };
-
   VkDescriptorSetLayoutCreateInfo layoutInfo{
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
       .pNext = &flagsCreateInfo,
@@ -2014,27 +2129,7 @@ void VulkanContext::createDescriptorPool() {
 
   if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr,
                                   &descriptorSetLayout) != VK_SUCCESS)
-    throw std::runtime_error("failed to create descriptor set layout");
-}
-
-void VulkanContext::createDescriptorSetLayout() {
-  VkDescriptorPoolSize poolSizes[] = {
-      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_TEXTURES},
-      {VK_DESCRIPTOR_TYPE_SAMPLER, MAX_TEXTURES},
-      {VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, MAX_TEXTURES},
-  };
-
-  VkDescriptorPoolCreateInfo poolInfo{
-      .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-      .flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT,
-      .maxSets = MAX_FRAMES_IN_FLIGHT,
-      .poolSizeCount = 3,
-      .pPoolSizes = poolSizes,
-  };
-
-  if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) !=
-      VK_SUCCESS)
-    throw std::runtime_error("failed to create pool descirptor");
+    throw std::runtime_error("failed to create descriptor set layouts");
 }
 
 void VulkanContext::createDescriptorSets() {
@@ -2053,7 +2148,7 @@ void VulkanContext::createDescriptorSets() {
       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
       .pNext = &countInfo,
       .descriptorPool = descriptorPool,
-      .descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+      .descriptorSetCount = MAX_FRAMES_IN_FLIGHT,
       .pSetLayouts = layouts.data(),
   };
 
@@ -2603,9 +2698,10 @@ VulkanContext::~VulkanContext() {
 
   for (size_t i = 0; i != MAX_FRAMES_IN_FLIGHT; i++) {
     vkDestroySemaphore(device, imageAvailableSemaphore[i], nullptr);
-    vkDestroySemaphore(device, renderFinishSemaphore[i], nullptr);
     vkDestroyFence(device, drawFences[i], nullptr);
   }
+  for (size_t i = 0; i != swapChainImages.size(); i++)
+    vkDestroySemaphore(device, renderFinishSemaphore[i], nullptr);
 
   cleanupSwapChain();
 #ifdef MAI_USE_VMA

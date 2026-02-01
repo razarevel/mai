@@ -17,8 +17,8 @@ endif()
 find_package(Vulkan REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
-find_package(glslang CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
+find_package(glslang CONFIG REQUIRED)
 
 file(GLOB_RECURSE MY_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
@@ -44,7 +44,6 @@ target_link_libraries(mai
 		Vulkan::Vulkan
 		GPUOpen::VulkanMemoryAllocator
 		glslang::glslang 
-		glslang::glslang-default-resource-limits
 		glslang::SPIRV 
 		assimp::assimp
 )
@@ -54,4 +53,4 @@ add_subdirectory(examples/2.GLM)
 add_subdirectory(examples/3.buffer)
 add_subdirectory(examples/4.textures)
 add_subdirectory(examples/5.cubemap)
-add_subdirectory(examples/6.fontRendering)
+add_subdirectory(examples/6.compute)
