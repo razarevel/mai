@@ -162,7 +162,7 @@ struct Renderer {
   struct Texture *createImage(const struct TextureInfo &info);
 
   void waitDeviceIdle();
-  void submit();
+  void submit(bool waitOnCompute = false);
 
   uint64_t gpuAddress(struct Buffer *buffer);
 
@@ -1685,10 +1685,13 @@ void CommandBuffer::update(struct Buffer *buffer, const void *data,
 
 void Renderer::waitDeviceIdle() { vkDeviceWaitIdle(ctx->device); }
 
-void Renderer::submit() {
+void Renderer::submit(bool waitOnCompute) {
   uint32_t frameIndex = ctx->frameIndex;
 
-  VkSemaphore waitSemaphore[] = {ctx->imageAvailableSemaphore[frameIndex]};
+  std::vector<VkSemaphore> waitSemaphore{
+      ctx->imageAvailableSemaphore[frameIndex]};
+  if (waitOnCompute)
+    waitSemaphore.push_back(ctx->computeFinishSemaphore[ctx->frameIndex]);
 
   VkSemaphore signalSemaphore[] = {ctx->renderFinishSemaphore[ctx->imageIndex]};
   VkCommandBuffer &commandBuffer = ctx->commandBuffers[frameIndex];
@@ -1699,8 +1702,8 @@ void Renderer::submit() {
 
   VkSubmitInfo submitInfo = {
       .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-      .waitSemaphoreCount = 1,
-      .pWaitSemaphores = waitSemaphore,
+      .waitSemaphoreCount = static_cast<uint32_t>(waitSemaphore.size()),
+      .pWaitSemaphores = waitSemaphore.data(),
       .pWaitDstStageMask = waitStages,
       .commandBufferCount = 1,
       .pCommandBuffers = &commandBuffer,

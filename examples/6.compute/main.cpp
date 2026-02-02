@@ -30,7 +30,7 @@ int main() {
       .usage = MAI::Attachment_Bit,
   });
 
-  const uint32_t kNumMesh = 32 * 1024;
+  const uint32_t kNumMesh = 3048;
 
   std::vector<vec4> centers(kNumMesh);
   for (vec4 &p : centers)
@@ -202,7 +202,7 @@ int main() {
       buf->cmdDrawIndex(indices.size(), kNumMesh);
     }
     buf->cmdEndRendering();
-    ren->submit();
+    ren->submit(true);
     delete buf;
     frameId = (frameId + 1) & 1;
   }

@@ -1,1 +1,1 @@
-cmake --build build && ./build/examples/fireshow/fireshow
+cmake --build build && ./build/examples/6.compute/compute
