@@ -118,10 +118,7 @@ int main() {
   MAI::Pipeline *pipeline = ren->createPipeline({
       .vert = vert,
       .frag = frag,
-      .color =
-          {
-              .depthFormat = depthTexture->getDeptFormat(),
-          },
+      .depthFormat = depthTexture->getDeptFormat(),
       .cullMode = MAI::CullMode::Back,
   });
   delete vert;

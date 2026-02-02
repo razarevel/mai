@@ -4,11 +4,12 @@ layout(triangles)in;
 layout(triangle_strip, max_vertices=3)out;
 
 layout(location = 0) in vec2 uv[];
-layout(location = 1) out vec2 uvs;
-layout(location = 2) out vec3 barycoords;
 
-in gl_Vertex{
-		gl_Position;
+layout(location = 0) out vec2 uvs;
+layout(location = 1) out vec3 barycoords;
+
+in gl_PerVertex{
+		vec4 gl_Position;
 }gl_in[];
 
 void main () {

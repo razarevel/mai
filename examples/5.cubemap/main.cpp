@@ -57,10 +57,7 @@ int main() {
   MAI::Pipeline *pipelineSkybox = ren->createPipeline({
       .vert = skyVert,
       .frag = skyFrag,
-      .color =
-          {
-              .depthFormat = depthTexture->getDeptFormat(),
-          },
+      .depthFormat = depthTexture->getDeptFormat(),
   });
   delete skyVert;
   delete skyFrag;

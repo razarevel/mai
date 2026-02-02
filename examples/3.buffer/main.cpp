@@ -91,10 +91,7 @@ int main() {
       .vertexInput = &input,
       .vert = vertShader,
       .frag = fragShader,
-      .color =
-          {
-              .depthFormat = depthTexture->getDeptFormat(),
-          },
+      .depthFormat = depthTexture->getDeptFormat(),
       .cullMode = MAI::CullMode::Back,
   });
   delete vertShader;

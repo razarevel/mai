@@ -1,1 +1,1 @@
-cmake --build build && ./build/examples/7.tessellation/tessellation
+cmake --build build && ./build/examples/fireshow/fireshow

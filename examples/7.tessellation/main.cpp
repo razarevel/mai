@@ -76,7 +76,7 @@ int main() {
   MAI::Shader *frag =
       ren->createShader(CURRENT_DIR "examples/7.tessellation/main.frag");
   MAI::Shader *geom =
-      ren->createShader(CURRENT_DIR "examples/7.tessellation/main.gemo");
+      ren->createShader(CURRENT_DIR "examples/7.tessellation/main.geom");
   MAI::Shader *tesc =
       ren->createShader(CURRENT_DIR "examples/7.tessellation/main.tesc");
   MAI::Shader *tese =
@@ -88,14 +88,17 @@ int main() {
       .geom = geom,
       .tece = tesc,
       .tese = tese,
-      .color =
-          {
-              .depthFormat = depthTexture->getDeptFormat(),
-          },
+      .depthFormat = depthTexture->getDeptFormat(),
       .cullMode = MAI::CullMode::Back,
+      .topology = MAI::Patch_List,
+      .patchControllPoints = 3,
   });
   delete vert;
   delete frag;
+  delete geom;
+  delete tese;
+  delete tesc;
+
   MAI::Texture *texture;
   {
     int w, h, comp;
@@ -119,7 +122,7 @@ int main() {
     mat4 proj = mat4(1.0f);
     vec4 cameraPos;
     uint32_t texture;
-    float tesselationScale = 0.5f;
+    float tesselationScale = 0.8f;
     uint64_t vertices;
   };
 
@@ -175,6 +178,12 @@ int main() {
   }
   ren->waitDeviceIdle();
 
+  delete bufferPerFrame;
+  delete vertexBuffer;
+  delete indexBuffer;
+  delete depthTexture;
+  delete texture;
+  delete pipeline;
   glfwDestroyWindow(window);
   glfwTerminate();
   delete ren;

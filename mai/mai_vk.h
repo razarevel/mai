@@ -57,20 +57,21 @@ enum PrimitiveTopology : uint8_t {
   Line_List = 0x02,
   Line_Strip = 0x03,
   Triangle_List = 0x04,
-  Triangle_Strip = 0x05,
+  Triangle_Strip = 0x8,
+  Patch_List = 0x10,
 };
 
 enum PolygonMode : uint8_t {
   Fill = 0x01,
   Line = 0x02,
-  Point = 0x03,
+  Point = 0x04,
 };
 
 enum VertexFormat : uint8_t {
   Float = 0x01,
   Float2 = 0x02,
-  Float3 = 0x03,
-  Float4 = 0x04,
+  Float3 = 0x04,
+  Float4 = 0x08,
 };
 
 enum IndexType : uint8_t {
@@ -139,6 +140,12 @@ enum SamplerWrap : uint8_t {
   Clamp_to_Edge,
   Clamp_to_Border,
   Mirror_Clamp_to_edge,
+};
+
+enum BlendFactor : uint8_t {
+  Src_Alpha,
+  Dst_Alpha,
+  Minus_Src_Alpha,
 };
 
 struct Renderer {
@@ -382,8 +389,9 @@ struct SpecInfo {
 };
 
 struct MaiColorInfo {
-  VkFormat depthFormat;
   bool blendEnable = false;
+  BlendFactor srcColorBlend;
+  BlendFactor dstColorBlend;
 };
 
 struct PipelineInfo {
@@ -395,10 +403,12 @@ struct PipelineInfo {
   Shader *tese;
   SpecInfo specInfo;
   MaiColorInfo color;
+  VkFormat depthFormat;
   CullMode cullMode = CullMode::None;
   PrimitiveTopology topology = PrimitiveTopology::Triangle_List;
   PolygonMode polygon = PolygonMode::Fill;
   uint32_t pushConstantSize = GENERAL_PUSHCONSTANT_SIZE;
+  uint32_t patchControllPoints;
 };
 
 struct ComputePipelineInfo {
@@ -721,6 +731,7 @@ VkFilter getSamplerFilter(SamplerFilter filter);
 VkSamplerMipmapMode getSamplerMipmapMode(SamplerMipmap mode);
 VkSamplerAddressMode getSamplerWrap(SamplerWrap wrap);
 VkCompareOp getCompareOp(CompareOp op);
+VkBlendFactor getBlendFactor(BlendFactor factor);
 
 #ifdef MAI_INCLUDE_GLSLANG
 void compileShaderGlslang(ShaderStage stage, const char *code,
@@ -910,6 +921,14 @@ struct Pipeline *Renderer::createPipeline(const struct PipelineInfo &info_) {
       .primitiveRestartEnable = VK_FALSE,
   };
 
+  VkPipelineTessellationStateCreateInfo tesseInfo{};
+  if (info_.tece && info_.tese) {
+    tesseInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO,
+        .patchControlPoints = info_.patchControllPoints,
+    };
+  }
+
   VkPipelineViewportStateCreateInfo viewportState{
       .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
       .viewportCount = 1,
@@ -940,24 +959,25 @@ struct Pipeline *Renderer::createPipeline(const struct PipelineInfo &info_) {
   };
 
   if (info_.color.blendEnable) {
-    // colorBlendAttachment.blendEnable = VK_TRUE;
-    //
-    // if (info.colorInfo->srcColorBlend == VK_BLEND_FACTOR_SRC_ALPHA) {
-    //   colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    //   colorBlendAttachment.dstColorBlendFactor =
-    //       VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    // }
-    //
-    // colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-    //
-    // if (info.colorInfo->dstColorBlend == VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA)
-    // {
-    //   colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    //   colorBlendAttachment.dstAlphaBlendFactor =
-    //       VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    // }
-    //
-    // colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachment.blendEnable = VK_TRUE;
+
+    if (getBlendFactor(info_.color.srcColorBlend) ==
+        VK_BLEND_FACTOR_SRC_ALPHA) {
+      colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+      colorBlendAttachment.dstColorBlendFactor =
+          VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    }
+
+    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+
+    if (getBlendFactor(info_.color.dstColorBlend) ==
+        VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA) {
+      colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+      colorBlendAttachment.dstAlphaBlendFactor =
+          VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    }
+
+    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
   }
 
   VkPipelineColorBlendStateCreateInfo colorBlending{
@@ -974,8 +994,8 @@ struct Pipeline *Renderer::createPipeline(const struct PipelineInfo &info_) {
       .pColorAttachmentFormats = &ctx->swapChainFormat,
   };
 
-  if (info_.color.depthFormat)
-    pipelineRenderCreateInfo.depthAttachmentFormat = info_.color.depthFormat;
+  if (info_.depthFormat)
+    pipelineRenderCreateInfo.depthAttachmentFormat = info_.depthFormat;
 
   VkPipelineDepthStencilStateCreateInfo depthStencil{
       .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
@@ -996,6 +1016,7 @@ struct Pipeline *Renderer::createPipeline(const struct PipelineInfo &info_) {
       .pStages = stages.data(),
       .pVertexInputState = &vertexInputInfo,
       .pInputAssemblyState = &inputAssembly,
+      .pTessellationState = (info_.tece && info_.tese) ? &tesseInfo : nullptr,
       .pViewportState = &viewportState,
       .pRasterizationState = &raserization,
       .pMultisampleState = &multiSampling,
@@ -1667,20 +1688,18 @@ void Renderer::waitDeviceIdle() { vkDeviceWaitIdle(ctx->device); }
 void Renderer::submit() {
   uint32_t frameIndex = ctx->frameIndex;
 
-  VkSemaphore waitSemaphore[] = {ctx->computeFinishSemaphore[frameIndex],
-                                 ctx->imageAvailableSemaphore[frameIndex]};
+  VkSemaphore waitSemaphore[] = {ctx->imageAvailableSemaphore[frameIndex]};
 
   VkSemaphore signalSemaphore[] = {ctx->renderFinishSemaphore[ctx->imageIndex]};
   VkCommandBuffer &commandBuffer = ctx->commandBuffers[frameIndex];
 
   VkPipelineStageFlags waitStages[] = {
-      VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
   };
 
   VkSubmitInfo submitInfo = {
       .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-      .waitSemaphoreCount = 2,
+      .waitSemaphoreCount = 1,
       .pWaitSemaphores = waitSemaphore,
       .pWaitDstStageMask = waitStages,
       .commandBufferCount = 1,
@@ -1941,6 +1960,7 @@ void VulkanContext::createLogicalDevice() {
 
   VkPhysicalDeviceFeatures deviceFeatures{
       .geometryShader = VK_TRUE,
+      .tessellationShader = VK_TRUE,
       .depthBiasClamp = VK_TRUE,
       .fillModeNonSolid = VK_TRUE,
       .samplerAnisotropy = VK_TRUE,
@@ -2968,7 +2988,7 @@ MAI::ShaderStage getShaderStageFromFile(const char *filename) {
     return ShaderStage::Geom;
   else if (endsWith(filename, "tese") || endsWith(filename, "tespv"))
     return ShaderStage::Tese;
-  else if (endsWith(filename, "tece") || endsWith(filename, "tcspv"))
+  else if (endsWith(filename, "tesc") || endsWith(filename, "tcspv"))
     return ShaderStage::Tece;
   else if (endsWith(filename, "comp") || endsWith(filename, "cspv"))
     return ShaderStage::Comp;
@@ -3152,6 +3172,8 @@ VkPrimitiveTopology getPrimitiveTopology(PrimitiveTopology topology) {
     return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
   case Triangle_Strip:
     return VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+  case Patch_List:
+    return VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
   }
 
   assert(false);
@@ -3250,6 +3272,18 @@ VkCompareOp getCompareOp(CompareOp op) {
     return VK_COMPARE_OP_GREATER_OR_EQUAL;
   case MAI::Always:
     return VK_COMPARE_OP_ALWAYS;
+  }
+  assert(false);
+}
+
+VkBlendFactor getBlendFactor(BlendFactor factor) {
+  switch (factor) {
+  case MAI::Src_Alpha:
+    return VK_BLEND_FACTOR_SRC_ALPHA;
+  case MAI::Dst_Alpha:
+    return VK_BLEND_FACTOR_DST_COLOR;
+  case MAI::Minus_Src_Alpha:
+    return VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
   }
   assert(false);
 }

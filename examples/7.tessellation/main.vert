@@ -11,9 +11,9 @@ vec2 getTexCoord(int i) {
 }
 
 layout(location = 0) out vec2 uv_in;
-layout(location = 1) out vec2 world_pos;
+layout(location = 1) out vec3 world_pos;
 
-out gl_Vertex{
+out gl_PerVertex{
 		vec4 gl_Position;
 };
 
