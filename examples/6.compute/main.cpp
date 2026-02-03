@@ -30,7 +30,7 @@ int main() {
       .usage = MAI::Attachment_Bit,
   });
 
-  const uint32_t kNumMesh = 3048;
+  const uint32_t kNumMesh = 1024;
 
   std::vector<vec4> centers(kNumMesh);
   for (vec4 &p : centers)
@@ -163,7 +163,7 @@ int main() {
         vec3(0.0f, 0.0f,
              -1000.0f + 500.0f * (1.0f - cos(-glfwGetTime() * 0.5f))));
 
-    MAI::CommandBuffer *buf = ren->acquireCommandBuffer(false);
+    MAI::CommandBuffer *buf = ren->acquireCommandBuffer();
 
     const struct {
       mat4 viewproj;
@@ -181,15 +181,15 @@ int main() {
         .time = (float)glfwGetTime(),
     };
 
-    buf->cmdBeginCompute();
+    // buf->cmdBeginCompute();
     {
       buf->bindComputePipeline(computePipeline);
       buf->cmdPushConstant(&pc);
       buf->cmdDispatchThreadGroups({.width = kNumMesh / 32});
     }
-    buf->cmdEndCompute();
+    // buf->cmdEndCompute();
 
-    buf->cmdBeginCommandBuffer();
+    // buf->cmdBeginCommandBuffer();
     buf->cmdBeginRendering({.texture = depthTexture});
     {
       buf->bindPipeline(pipeline);
@@ -202,7 +202,7 @@ int main() {
       buf->cmdDrawIndex(indices.size(), kNumMesh);
     }
     buf->cmdEndRendering();
-    ren->submit(true);
+    ren->submit();
     delete buf;
     frameId = (frameId + 1) & 1;
   }

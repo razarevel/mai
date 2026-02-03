@@ -152,7 +152,7 @@ struct Renderer {
   Renderer(struct VulkanContext *ctx);
   ~Renderer();
 
-  struct CommandBuffer *acquireCommandBuffer(bool beginCommandBuffer = true);
+  struct CommandBuffer *acquireCommandBuffer();
   struct Shader *createShader(const char *fileName,
                               ShaderStage stage = ShaderStage::NONE);
   struct Pipeline *createPipeline(const struct PipelineInfo &info);
@@ -162,7 +162,7 @@ struct Renderer {
   struct Texture *createImage(const struct TextureInfo &info);
 
   void waitDeviceIdle();
-  void submit(bool waitOnCompute = false);
+  void submit();
 
   uint64_t gpuAddress(struct Buffer *buffer);
 
@@ -192,10 +192,7 @@ struct CommandBuffer {
   CommandBuffer(VulkanContext *ctx);
 
   void cmdBeginRendering(const struct BeginInfo &info);
-  void cmdBeginCommandBuffer();
   void cmdEndRendering();
-  void cmdBeginCompute();
-  void cmdEndCompute();
   void bindPipeline(Pipeline *pipeline);
   void bindComputePipeline(Pipeline *pipeline);
   void bindVertexBuffer(uint32_t firstBinding, Buffer *buffer,
@@ -261,10 +258,8 @@ struct VulkanContext {
   std::vector<VkSemaphore> computeFinishSemaphore;
   std::vector<VkSemaphore> renderFinishSemaphore;
   std::vector<VkFence> drawFences;
-  std::vector<VkFence> computeFences;
 
   std::vector<VkCommandBuffer> commandBuffers;
-  std::vector<VkCommandBuffer> computeCommandBuffers;
 
   VkShaderModule createShaderModule(uint32_t codeSize, const void *code);
   VkPipelineLayout createPipelineLayout(uint32_t pushConstantSize);
@@ -742,20 +737,18 @@ glslang_resource_t getGLSLangResources(const VkPhysicalDeviceLimits &limits);
 
 Renderer::Renderer(VulkanContext *ctx) : ctx(ctx) {}
 
-struct CommandBuffer *Renderer::acquireCommandBuffer(bool beginCommandBuffer) {
+struct CommandBuffer *Renderer::acquireCommandBuffer() {
   ctx->acquireSwapChainIndex();
 
-  if (beginCommandBuffer) {
-    VkCommandBuffer &commandBuffer = ctx->commandBuffers[ctx->frameIndex];
-    VkCommandBufferBeginInfo beginInfo{
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = 0,
-        .pInheritanceInfo = nullptr,
-    };
+  VkCommandBuffer &commandBuffer = ctx->commandBuffers[ctx->frameIndex];
+  VkCommandBufferBeginInfo beginInfo{
+      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+      .flags = 0,
+      .pInheritanceInfo = nullptr,
+  };
 
-    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
-      throw std::runtime_error("failed to begin command buffer");
-  }
+  if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
+    throw std::runtime_error("failed to begin command buffer");
 
   CommandBuffer *cmd = new CommandBuffer(ctx);
   return cmd;
@@ -1429,18 +1422,6 @@ void CommandBuffer::cmdBeginRendering(const struct BeginInfo &info) {
   });
 }
 
-void CommandBuffer::cmdBeginCommandBuffer() {
-  VkCommandBuffer &commandBuffer = ctx->commandBuffers[ctx->frameIndex];
-  VkCommandBufferBeginInfo beginInfo{
-      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-      .flags = 0,
-      .pInheritanceInfo = nullptr,
-  };
-
-  if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
-    throw std::runtime_error("failed to begin command buffer");
-}
-
 void CommandBuffer::cmdEndRendering() {
 
   vkCmdEndRendering(ctx->commandBuffers[ctx->frameIndex]);
@@ -1454,42 +1435,6 @@ void CommandBuffer::cmdEndRendering() {
   vkEndCommandBuffer(ctx->commandBuffers[ctx->frameIndex]);
 
   lastBindPipline = nullptr;
-}
-
-void CommandBuffer::cmdBeginCompute() {
-  if (vkWaitForFences(ctx->device, 1, &ctx->computeFences[ctx->frameIndex],
-                      VK_TRUE, UINT64_MAX) != VK_SUCCESS)
-    throw std::runtime_error("failed to wait for compute fence");
-
-  vkResetFences(ctx->device, 1, &ctx->computeFences[ctx->frameIndex]);
-  vkResetCommandBuffer(ctx->commandBuffers[ctx->frameIndex], 0);
-
-  VkCommandBuffer &commandBuffer = ctx->computeCommandBuffers[ctx->frameIndex];
-  VkCommandBufferBeginInfo beginInfo{
-      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-      .flags = 0,
-      .pInheritanceInfo = nullptr,
-  };
-
-  if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
-    throw std::runtime_error("failed to begin command buffer");
-}
-
-void CommandBuffer::cmdEndCompute() {
-  VkCommandBuffer &commandBuffer = ctx->computeCommandBuffers[ctx->frameIndex];
-  if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
-    throw std::runtime_error("failed to end commandBuffer");
-
-  VkSubmitInfo submitInfo{
-      .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-      .commandBufferCount = 1,
-      .pCommandBuffers = &commandBuffer,
-      .signalSemaphoreCount = 1,
-      .pSignalSemaphores = &ctx->computeFinishSemaphore[ctx->frameIndex],
-  };
-  if (vkQueueSubmit(ctx->graphicsQueue, 1, &submitInfo,
-                    ctx->computeFences[ctx->frameIndex]) != VK_SUCCESS)
-    throw std::runtime_error("failed to submit compute");
 }
 
 void CommandBuffer::bindPipeline(Pipeline *pipeline) {
@@ -1510,10 +1455,10 @@ void CommandBuffer::bindComputePipeline(Pipeline *pipeline) {
   assert(pipeline->getPipeline() != VK_NULL_HANDLE);
   lastBindComputePipeline = pipeline;
   if (lastBindComputePipeline != nullptr) {
-    vkCmdBindPipeline(ctx->computeCommandBuffers[ctx->frameIndex],
+    vkCmdBindPipeline(ctx->commandBuffers[ctx->frameIndex],
                       VK_PIPELINE_BIND_POINT_COMPUTE,
                       lastBindComputePipeline->getPipeline());
-    vkCmdBindDescriptorSets(ctx->computeCommandBuffers[ctx->frameIndex],
+    vkCmdBindDescriptorSets(ctx->commandBuffers[ctx->frameIndex],
                             VK_PIPELINE_BIND_POINT_COMPUTE,
                             lastBindComputePipeline->getPipelineLayout(), 0, 1,
                             &ctx->descriptorSets[ctx->frameIndex], 0, nullptr);
@@ -1565,7 +1510,7 @@ void CommandBuffer::cmdPushConstant(const void *push, uint32_t size) {
                        lastBindPipline->getPipelineLayout(),
                        VK_SHADER_STAGE_ALL, 0, size, push);
   } else if (lastBindComputePipeline) {
-    vkCmdPushConstants(ctx->computeCommandBuffers[ctx->frameIndex],
+    vkCmdPushConstants(ctx->commandBuffers[ctx->frameIndex],
                        lastBindComputePipeline->getPipelineLayout(),
                        VK_SHADER_STAGE_ALL, 0, size, push);
   } else {
@@ -1576,8 +1521,8 @@ void CommandBuffer::cmdPushConstant(const void *push, uint32_t size) {
 
 void CommandBuffer::cmdDispatchThreadGroups(
     const struct DispatchThreadInfo &info) {
-  vkCmdDispatch(ctx->computeCommandBuffers[ctx->frameIndex], info.width,
-                info.height, info.depth);
+  vkCmdDispatch(ctx->commandBuffers[ctx->frameIndex], info.width, info.height,
+                info.depth);
 }
 
 void CommandBuffer::update(struct Buffer *buffer, const void *data,
@@ -1685,13 +1630,10 @@ void CommandBuffer::update(struct Buffer *buffer, const void *data,
 
 void Renderer::waitDeviceIdle() { vkDeviceWaitIdle(ctx->device); }
 
-void Renderer::submit(bool waitOnCompute) {
+void Renderer::submit() {
   uint32_t frameIndex = ctx->frameIndex;
 
-  std::vector<VkSemaphore> waitSemaphore{
-      ctx->imageAvailableSemaphore[frameIndex]};
-  if (waitOnCompute)
-    waitSemaphore.push_back(ctx->computeFinishSemaphore[ctx->frameIndex]);
+  VkSemaphore waitSemaphore[] = {ctx->imageAvailableSemaphore[frameIndex]};
 
   VkSemaphore signalSemaphore[] = {ctx->renderFinishSemaphore[ctx->imageIndex]};
   VkCommandBuffer &commandBuffer = ctx->commandBuffers[frameIndex];
@@ -1702,8 +1644,8 @@ void Renderer::submit(bool waitOnCompute) {
 
   VkSubmitInfo submitInfo = {
       .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-      .waitSemaphoreCount = static_cast<uint32_t>(waitSemaphore.size()),
-      .pWaitSemaphores = waitSemaphore.data(),
+      .waitSemaphoreCount = 1,
+      .pWaitSemaphores = waitSemaphore,
       .pWaitDstStageMask = waitStages,
       .commandBufferCount = 1,
       .pCommandBuffers = &commandBuffer,
@@ -2111,10 +2053,8 @@ void VulkanContext::recreateSwapChain() {
 
 void VulkanContext::createSyncObj() {
   imageAvailableSemaphore.resize(MAX_FRAMES_IN_FLIGHT);
-  computeFinishSemaphore.resize(MAX_FRAMES_IN_FLIGHT);
   renderFinishSemaphore.resize(swapChainImages.size());
   drawFences.resize(MAX_FRAMES_IN_FLIGHT);
-  computeFences.resize(MAX_FRAMES_IN_FLIGHT);
 
   VkSemaphoreCreateInfo semaphoreInfo = {
       .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
@@ -2132,10 +2072,7 @@ void VulkanContext::createSyncObj() {
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     if (vkCreateSemaphore(device, &semaphoreInfo, nullptr,
                           &imageAvailableSemaphore[i]) ||
-        vkCreateSemaphore(device, &semaphoreInfo, nullptr,
-                          &computeFinishSemaphore[i]) ||
-        vkCreateFence(device, &fenceInfo, nullptr, &drawFences[i]) ||
-        vkCreateFence(device, &fenceInfo, nullptr, &computeFences[i]) !=
+        vkCreateFence(device, &fenceInfo, nullptr, &drawFences[i]) !=
             VK_SUCCESS)
       throw std::runtime_error("failed to create fence");
 }
@@ -2154,7 +2091,6 @@ void VulkanContext::createCommandPool() {
 
 void VulkanContext::createCommandBuffer() {
   commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
-  computeCommandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
   VkCommandBufferAllocateInfo allocInfo{
       .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -2162,19 +2098,8 @@ void VulkanContext::createCommandBuffer() {
       .commandBufferCount = MAX_FRAMES_IN_FLIGHT,
   };
 
-  VkCommandBufferAllocateInfo allocaInfo2{
-      .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-      .commandPool = commandPool,
-      .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-      .commandBufferCount = MAX_FRAMES_IN_FLIGHT,
-  };
-
   if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) !=
       VK_SUCCESS)
-    throw std::runtime_error("failed to allocate command buffer");
-
-  if (vkAllocateCommandBuffers(device, &allocaInfo2,
-                               computeCommandBuffers.data()) != VK_SUCCESS)
     throw std::runtime_error("failed to allocate command buffer");
 }
 
@@ -2820,9 +2745,7 @@ VulkanContext::~VulkanContext() {
 
   for (size_t i = 0; i != MAX_FRAMES_IN_FLIGHT; i++) {
     vkDestroySemaphore(device, imageAvailableSemaphore[i], nullptr);
-    vkDestroySemaphore(device, computeFinishSemaphore[i], nullptr);
     vkDestroyFence(device, drawFences[i], nullptr);
-    vkDestroyFence(device, computeFences[i], nullptr);
   }
 
   for (size_t i = 0; i != swapChainImages.size(); i++)
