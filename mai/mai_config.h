@@ -1,6 +1,3 @@
 #pragma once
-
-#define MAI_IMPLEMENTATION
 #define MAI_USE_VMA
-#define VMA_IMPLEMENTATION
 #define MAI_INCLUDE_GLSLANG

@@ -56,5 +56,6 @@ add_subdirectory(examples/5.cubemap)
 add_subdirectory(examples/6.compute)
 add_subdirectory(examples/7.tessellation)
 
-# examples
+# # examples
 add_subdirectory(examples/fireshow)
+add_subdirectory(examples/fonts)

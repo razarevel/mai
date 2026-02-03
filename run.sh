@@ -1,1 +1,1 @@
-cmake --build build && ./build/examples/6.compute/compute
+cmake --build build && ./build/examples/fonts/fonts
