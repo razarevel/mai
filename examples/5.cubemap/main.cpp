@@ -1,6 +1,3 @@
-#include "mai_config.h"
-#include "mai_vk.h"
-
 #include <glm/ext.hpp>
 #include <glm/glm.hpp>
 
@@ -14,6 +11,8 @@ using glm::vec4;
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#include "mai_config.h"
+#include "mai_vk.h"
 int main() {
   MAI::WindowInfo info{
       .width = 1200,
@@ -96,6 +95,7 @@ int main() {
     p[1][1] *= -1;
 
     MAI::CommandBuffer *cmd = ren->acquireCommandBuffer();
+
     PerFrameData pf{
         .model = m2 * m1,
         .view = v,

@@ -59,3 +59,4 @@ add_subdirectory(examples/7.tessellation)
 # # examples
 add_subdirectory(examples/fireshow)
 add_subdirectory(examples/fonts)
+add_subdirectory(examples/UITools)

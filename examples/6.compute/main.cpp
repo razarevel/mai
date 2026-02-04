@@ -1,5 +1,4 @@
-#include "mai_config.h"
-#include "mai_vk.h"
+#include "FontRendere.h"
 #include <cassert>
 
 #include <assimp/cimport.h>
@@ -9,11 +8,32 @@
 #include <glm/ext.hpp>
 #include <glm/glm.hpp>
 
+#include <string>
+
 using glm::mat4;
 using glm::vec3;
 using glm::vec4;
 
 #include "stb_image.h"
+
+struct FPS {
+  FPS(float avgInterval = 0.5f) : avgInterval_(avgInterval) {}
+  void tick(float deltaSecond) {
+    numFrames++;
+    accumulateTime += deltaSecond;
+    if (accumulateTime > avgInterval_) {
+      currentFPS_ = static_cast<float>(numFrames / accumulateTime);
+      numFrames = 0;
+      accumulateTime = 0;
+    }
+  }
+
+public:
+  float avgInterval_ = 0.5f;
+  uint32_t numFrames = 0;
+  double accumulateTime = 0;
+  float currentFPS_ = 0.0f;
+};
 
 int main() {
   MAI::WindowInfo info{
@@ -140,6 +160,9 @@ int main() {
     stbi_image_free((void *)pixel);
   }
 
+  FontRenderer *fmt = new FontRenderer(ren, info.width, info.height);
+  FPS fps;
+
   uint32_t frameId = 0;
 
   float deltaSecond = 0.0f;
@@ -148,6 +171,7 @@ int main() {
     const double newTimeStamp = glfwGetTime();
     deltaSecond = static_cast<float>(newTimeStamp - timeStamp);
     timeStamp = newTimeStamp;
+    fps.tick(deltaSecond);
 
     glfwPollEvents();
     int width, height;
@@ -163,7 +187,12 @@ int main() {
         vec3(0.0f, 0.0f,
              -1000.0f + 500.0f * (1.0f - cos(-glfwGetTime() * 0.5f))));
 
+    std::string currentFPS = "FPS " + std::to_string((uint32_t)fps.currentFPS_);
+
     MAI::CommandBuffer *buf = ren->acquireCommandBuffer();
+
+    fmt->drawDynamicText(buf, currentFPS.c_str(), "fps", glm::vec2(0.9f, 0.01f),
+                         glm::vec3(0, 0.98, 0.863));
 
     const struct {
       mat4 viewproj;
@@ -180,6 +209,8 @@ int main() {
         .bufferVertices = ren->gpuAddress(vertexBuffer),
         .time = (float)glfwGetTime(),
     };
+
+    fmt->draw(buf);
 
     // buf->cmdBeginCompute();
     {
@@ -205,8 +236,11 @@ int main() {
     ren->submit();
     delete buf;
     frameId = (frameId + 1) & 1;
+    fmt->clearGarbge();
   }
   ren->waitDeviceIdle();
+
+  delete fmt;
 
   delete texture;
   delete bufferMatrices[0];

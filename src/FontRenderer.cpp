@@ -79,21 +79,7 @@ void FontRenderer::loadResources() {
 
   vert_ = ren_->createShader(CURRENT_DIR "shaders/font.vert");
   frag_ = ren_->createShader(CURRENT_DIR "shaders/font.frag");
-  MAI::VertexInput info = {
-      .attributes = {{
-                         .location = 0,
-                         .format = MAI::VertexFormat::Float2,
-                         .offset = 0,
-                     },
-                     {
-                         .location = 1,
-                         .format = MAI::VertexFormat::Float2,
-                         .offset = offsetof(Vertex, uv),
-                     }},
-      .inputBinding = {.stride = sizeof(Vertex)},
-  };
   pipeline_ = ren_->createPipeline({
-      .vertexInput = &info,
       .vert = vert_,
       .frag = frag_,
       .color =
@@ -107,7 +93,9 @@ void FontRenderer::loadResources() {
   delete frag_;
 }
 
-void FontRenderer::setText(const char *text, glm::vec2 pos) {
+void FontRenderer::populateVertices(const char *text,
+                                    std::vector<Vertex> &vertices,
+                                    glm::vec2 pos, glm::vec3 color) {
   std::string str = text;
   float penX = screenWidht * pos.x;
   float penY = screenHeight * pos.y;
@@ -124,44 +112,111 @@ void FontRenderer::setText(const char *text, glm::vec2 pos) {
     float v1 = (g.y + g.height) / (float)atlastHeight;
 
     // triangle 0
-    vertices.push_back({glm::vec2(xpos, ypos), glm::vec2(u0, v0)});
-    vertices.push_back({glm::vec2(xpos + g.width, ypos), glm::vec2(u1, v0)});
+    vertices.push_back({glm::vec2(xpos, ypos), glm::vec2(u0, v0), color});
     vertices.push_back(
-        {glm::vec2(xpos + g.width, ypos + g.height), glm::vec2(u1, v1)});
+        {glm::vec2(xpos + g.width, ypos), glm::vec2(u1, v0), color});
+    vertices.push_back(
+        {glm::vec2(xpos + g.width, ypos + g.height), glm::vec2(u1, v1), color});
     // triangle 1
-    vertices.push_back({glm::vec2(xpos, ypos), glm::vec2(u0, v0)});
+    vertices.push_back({glm::vec2(xpos, ypos), glm::vec2(u0, v0), color});
     vertices.push_back(
-        {glm::vec2(xpos + g.width, ypos + g.height), glm::vec2(u1, v1)});
-    vertices.push_back({glm::vec2(xpos, ypos + g.height), glm::vec2(u0, v1)});
+        {glm::vec2(xpos + g.width, ypos + g.height), glm::vec2(u1, v1), color});
+    vertices.push_back(
+        {glm::vec2(xpos, ypos + g.height), glm::vec2(u0, v1), color});
     penX += g.x_advance;
   }
+}
+
+void FontRenderer::setText(const char *text, glm::vec2 pos, glm::vec3 color) {
+  if (stopInserting)
+    return;
+  populateVertices(text, verticesAll, pos, color);
+}
+
+void FontRenderer::drawDynamicText(MAI::CommandBuffer *buff, const char *text,
+                                   const char *id, glm::vec2 pos,
+                                   glm::vec3 color) {
+  // generate vertices;
+  std::vector<Vertex> vertices2;
+  populateVertices(text, vertices2, pos, color);
+  MAI::Buffer *vertBuffer = nullptr;
+
+  auto it = dynamicBuffers.find(id);
+
+  if (it == dynamicBuffers.end()) {
+    // create
+    vertBuffer = ren_->createBuffer({
+        .usage = MAI::StorageBuffer,
+        .storage = MAI::StorageType_Device,
+        .size = sizeof(Vertex) * vertices2.size(),
+        .data = vertices2.data(),
+    });
+
+    dynamicBuffers.insert({id, DynamicText{vertBuffer, vertices2.size()}});
+
+  } else {
+    if (it->second.vertices_size != vertices2.size()) {
+      garbeBuffers.push_back(it->second.buffer);
+      vertBuffer = ren_->createBuffer({
+          .usage = MAI::StorageBuffer,
+          .storage = MAI::StorageType_Device,
+          .size = sizeof(Vertex) * vertices2.size(),
+          .data = vertices2.data(),
+      });
+      it->second.buffer = vertBuffer;
+      it->second.vertices_size = vertices2.size();
+    } else {
+      vertBuffer = it->second.buffer;
+
+      buff->update(vertBuffer, vertices2.data(),
+                   sizeof(Vertex) * vertices2.size());
+    }
+  }
+
+  assert(vertBuffer && "still empty");
 }
 
 void FontRenderer::draw(MAI::CommandBuffer *buff) {
   if (!buffer_) {
     buffer_ = ren_->createBuffer({
-        .usage = MAI::VertexBuffer,
+        .usage = MAI::StorageBuffer,
         .storage = MAI::StorageType_Device,
-        .size = sizeof(Vertex) * vertices.size(),
-        .data = vertices.data(),
+        .size = sizeof(Vertex) * verticesAll.size(),
+        .data = verticesAll.data(),
     });
   }
   struct PushConstant {
     glm::mat4 proj;
-    glm::vec3 color;
     uint32_t textureId;
+    uint64_t vertices;
   } pc = {
       .proj = glm::ortho(0.0f, float(screenWidht), 0.0f, float(screenHeight)),
-      .color = glm::vec3(1.0f, 1.0f, 1.0f),
       .textureId = texture->getIndex(),
+      .vertices = ren_->gpuAddress(buffer_),
   };
   buff->bindPipeline(pipeline_);
-  buff->bindVertexBuffer(0, buffer_);
   buff->cmdPushConstant(&pc);
-  buff->cmdDraw(vertices.size());
+  buff->cmdDraw(verticesAll.size());
+
+  for (auto &it : dynamicBuffers) {
+    pc.vertices = ren_->gpuAddress(it.second.buffer);
+    buff->bindPipeline(pipeline_);
+    buff->cmdPushConstant(&pc);
+    buff->cmdDraw(it.second.vertices_size);
+  }
+
+  stopInserting = true;
+}
+
+void FontRenderer::clearGarbge() {
+  for (auto &it : garbeBuffers)
+    delete it;
+  garbeBuffers.clear();
 }
 
 FontRenderer::~FontRenderer() {
+  for (auto &it : dynamicBuffers)
+    delete it.second.buffer;
   delete buffer_;
   delete pipeline_;
   delete texture;
