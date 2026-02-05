@@ -50,7 +50,7 @@ int main() {
       .usage = MAI::Attachment_Bit,
   });
 
-  const uint32_t kNumMesh = 1024;
+  const uint32_t kNumMesh = 4 * 1024;
 
   std::vector<vec4> centers(kNumMesh);
   for (vec4 &p : centers)
@@ -160,7 +160,8 @@ int main() {
     stbi_image_free((void *)pixel);
   }
 
-  FontRenderer *fmt = new FontRenderer(ren, info.width, info.height);
+  FontRenderer *fmt = new FontRenderer(ren, info.width, info.height,
+                                       depthTexture->getDeptFormat());
   FPS fps;
 
   uint32_t frameId = 0;
@@ -210,18 +211,15 @@ int main() {
         .time = (float)glfwGetTime(),
     };
 
-    fmt->draw(buf);
-
     // buf->cmdBeginCompute();
     {
       buf->bindComputePipeline(computePipeline);
       buf->cmdPushConstant(&pc);
       buf->cmdDispatchThreadGroups({.width = kNumMesh / 32});
     }
-    // buf->cmdEndCompute();
 
-    // buf->cmdBeginCommandBuffer();
     buf->cmdBeginRendering({.texture = depthTexture});
+    fmt->draw(buf);
     {
       buf->bindPipeline(pipeline);
       buf->cmdPushConstant(&pc);

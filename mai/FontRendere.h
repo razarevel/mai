@@ -35,7 +35,8 @@ struct DynamicText {
 };
 
 struct FontRenderer {
-  FontRenderer(MAI::Renderer *ren, uint32_t width, uint32_t height);
+  FontRenderer(MAI::Renderer *ren, uint32_t width, uint32_t height,
+               VkFormat format = VK_FORMAT_UNDEFINED);
   ~FontRenderer();
 
   void setText(const char *text, glm::vec2 pos,
@@ -47,6 +48,7 @@ struct FontRenderer {
   void clearGarbge();
 
 private:
+  VkFormat format;
   uint32_t screenWidht;
   uint32_t screenHeight;
   MAI::Renderer *ren_;

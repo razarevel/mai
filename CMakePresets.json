@@ -12,6 +12,21 @@
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "CMAKE_CXX_FLAGS_DEBUG": "-D_DEBUG"
       }
+    },
+{
+      "name": "checker",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER" :"clangc",
+        "CMAKE_CXX_COMPILER" :"clang++",
+        "CMAKE_BUILD_TYPE" :"Debug",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_CXX_FLAGS_DEBUG": "-D_DEBUG",
+				"CMAKE_CXX_FLAGS": "-stdlib=libc++ -g",
+        "CMAKE_EXE_LINKER_FLAGS": "-stdlib=libc++",
+        "CMAKE_SHARED_LINKER_FLAGS": "-stdlib=libc++"
+      }
     }
   ]
 }

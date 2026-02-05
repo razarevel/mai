@@ -24,26 +24,40 @@ UITools::UITools(MAI::Renderer *ren, GLFWwindow *window)
   });
   delete vert_;
   delete frag_;
+
+  glfwGetFramebufferSize(window_, &screenWidth, &screenHeight);
 }
 
-void UITools::addButtion(const Tool &tool) {
+void UITools::addButton(const Tool &tool) {
   if (inserted)
     return;
 
+  float xpos = tool.position.x;
+  float ypos = tool.position.y;
+  float width = tool.size.width;
+  float height = tool.size.height;
+
   std::vector<glm::vec3> vertices;
+  vertices.reserve(6);
+
+  vertices.push_back(glm::vec3(xpos, ypos, 0.0f));
+  vertices.push_back(glm::vec3(xpos + width, ypos, 0.0f));
+  vertices.push_back(glm::vec3(xpos + width, ypos + height, 0.0f));
+  // triangle 1
+  vertices.push_back(glm::vec3(xpos, ypos, 0.0f));
+  vertices.push_back(glm::vec3(xpos + width, ypos + height, 0.0f));
+  vertices.push_back(glm::vec3(xpos, ypos + height, 0.0f));
 
   MAI::Buffer *buff = ren_->createBuffer({
       .usage = MAI::StorageBuffer,
       .storage = MAI::StorageType_Device,
-      .size = sizeof(glm::vec3) * quad.size(),
-      .data = quad.data(),
+      .size = sizeof(glm::vec3) * vertices.size(),
+      .data = vertices.data(),
   });
   tools.push_back({
       .id = currTool,
-      .position = tool.position,
-      .size = tool.size,
       .color = tool.color,
-      .drawSize = (uint32_t)quad.size(),
+      .drawSize = (uint32_t)vertices.size(),
   });
 
   buffers_.insert({currTool, buff});
@@ -51,27 +65,26 @@ void UITools::addButtion(const Tool &tool) {
   currTool++;
 }
 
-void UITools::draw(MAI::CommandBuffer *buff) {
+void UITools::draw() {
   struct PushConstant {
     glm::mat4 proj;
     glm::vec3 colors;
     uint64_t vertices;
   } pc;
 
-  int width, height;
-  glfwGetFramebufferSize(window_, &width, &height);
+  glfwGetFramebufferSize(window_, &screenWidth, &screenHeight);
 
-  const float ratio = width / (float)height;
-  glm::mat4 p = glm::ortho(-ratio, ratio, -1.f, 1.f, 1.f, -1.f);
-  p[1][1] *= -1;
-  glm::mat4 model = glm::mat4(1.0f);
+  const float ratio = screenWidth / (float)screenHeight;
+  glm::mat4 p = glm::ortho(0.0f, (float)screenWidth, (float)screenHeight,
+                           0.0f, // top-left origin
+                           -1.0f, 1.0f);
 
   for (auto &tool : tools) {
 
     auto it = buffers_.find(tool.id);
     assert(it != buffers_.end());
     pc = {
-        .proj = p * model,
+        .proj = p,
         .colors = tool.color,
         .vertices = ren_->gpuAddress(it->second),
     };

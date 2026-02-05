@@ -20,6 +20,7 @@ find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
 find_package(glslang CONFIG REQUIRED)
 
+
 file(GLOB_RECURSE MY_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
@@ -48,15 +49,16 @@ target_link_libraries(mai
 		assimp::assimp
 )
 
-add_subdirectory(examples/1.helloWorld)
-add_subdirectory(examples/2.GLM)
-add_subdirectory(examples/3.buffer)
+# add_subdirectory(examples/1.helloWorld)
+# add_subdirectory(examples/2.GLM)
+# add_subdirectory(examples/3.buffer)
 add_subdirectory(examples/4.textures)
-add_subdirectory(examples/5.cubemap)
-add_subdirectory(examples/6.compute)
-add_subdirectory(examples/7.tessellation)
+# add_subdirectory(examples/5.cubemap)
+# add_subdirectory(examples/6.compute)
+# add_subdirectory(examples/7.tessellation)
 
 # # examples
-add_subdirectory(examples/fireshow)
-add_subdirectory(examples/fonts)
-add_subdirectory(examples/UITools)
+# add_subdirectory(examples/fireshow)
+# add_subdirectory(examples/fonts)
+# add_subdirectory(examples/UITools)
+# add_subdirectory(examples/lighting)

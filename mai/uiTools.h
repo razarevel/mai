@@ -10,7 +10,7 @@
 struct Tool {
   uint32_t id;
   glm::vec2 position;
-  glm::vec2 size;
+  MAI::Dimissions size;
   glm::vec3 color;
   uint32_t drawSize;
 };
@@ -19,11 +19,15 @@ struct UITools {
   UITools(MAI::Renderer *ren, GLFWwindow *window);
   ~UITools();
 
-  void addButtion(const Tool &tool);
-  void draw(MAI::CommandBuffer *buff);
+  void addButton(const Tool &tool);
+  void draw();
+
+  void setCmdBuff(MAI::CommandBuffer *buf) { buff = buf; };
 
 private:
+  MAI::CommandBuffer *buff;
   MAI::Renderer *ren_;
+  int screenWidth, screenHeight;
   GLFWwindow *window_;
 
   MAI::Shader *vert_ = nullptr;

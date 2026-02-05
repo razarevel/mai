@@ -3,6 +3,7 @@
 
 #include <glm/ext.hpp>
 #include <glm/glm.hpp>
+#include <iostream>
 
 using glm::mat4;
 using glm::vec3;
@@ -18,7 +19,51 @@ int main() {
       .appName = "GLM Cube",
   };
   GLFWwindow *window = MAI::initWindow(info);
-  MAI::Renderer *ren = MAI::initVulkanWithSwapChain(window, info.appName);
+  MAI::Renderer *ren =
+      MAI::initVulkanWithSwapChain(window, info.appName,
+                                   {
+                                       .defaultDescriptorPool = false,
+                                   });
+  MAI::Descriptor *descriptor = ren->createDescriptor({
+      .flags = MAI::PoolFlags::Update_After_Bind,
+      .poolSize =
+          {
+              {MAI::Sampled_Image, MAX_TEXTURES * MAX_FRAMES_IN_FLIGHT},
+              {MAI::Sampler, MAX_TEXTURES * MAX_FRAMES_IN_FLIGHT},
+              {MAI::Sampled_Image, MAX_TEXTURES * MAX_FRAMES_IN_FLIGHT},
+          },
+      .maxSets = MAX_FRAMES_IN_FLIGHT,
+      .bindingFlags =
+          {
+              // binding 0 (2D textures)
+              MAI::Partially_Bound | MAI::Update_After_bind,
+              // binding 1 (sampler)
+              MAI::Partially_Bound | MAI::Update_After_bind,
+              // binding 2 (cubemap)
+              MAI::Partially_Bound | MAI::Update_After_bind,
+          },
+      .setLayoutBinding =
+          {
+              {
+                  .binding = 0,
+                  .desctype = MAI::Sampled_Image,
+                  .descCount = MAX_TEXTURES,
+                  .stage = MAI::Frag,
+              },
+              {
+                  .binding = 1,
+                  .desctype = MAI::Sampler,
+                  .descCount = MAX_TEXTURES,
+                  .stage = MAI::Frag,
+              },
+              {
+                  .binding = 2,
+                  .desctype = MAI::Sampled_Image,
+                  .descCount = MAX_TEXTURES,
+                  .stage = MAI::Frag,
+              },
+          },
+  });
 
   MAI::Shader *vert =
       ren->createShader(CURRENT_DIR "examples/4.textures/main.vert");
@@ -27,6 +72,7 @@ int main() {
   MAI::Pipeline *pipeline = ren->createPipeline({
       .vert = vert,
       .frag = frag,
+      .setLayout = descriptor->getDescriptorSetLayout(),
       .topology = MAI::Triangle_Strip,
   });
   delete vert;
@@ -46,6 +92,22 @@ int main() {
         .usage = MAI::Sampled_Bit,
     });
   }
+
+  texture->setTextureIndex(1);
+
+  descriptor->updateDescriptorWrite({
+      .imageView = texture->getImageView(),
+      .binding = 0,
+      .count = 1,
+      .descType = MAI::Sampled_Image,
+  });
+
+  descriptor->updateDescriptorWrite({
+      .sampler = texture->getSampler(),
+      .binding = 1,
+      .count = 1,
+      .descType = MAI::Sampler,
+  });
 
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
@@ -71,7 +133,7 @@ int main() {
     MAI::CommandBuffer *cmd = ren->acquireCommandBuffer();
     cmd->cmdBeginRendering({});
     {
-      cmd->bindPipeline(pipeline);
+      cmd->bindPipeline(pipeline, descriptor);
       cmd->cmdPushConstant(&pc);
       cmd->cmdDraw(4);
     }
@@ -81,6 +143,7 @@ int main() {
   }
   ren->waitDeviceIdle();
 
+  delete descriptor;
   delete pipeline;
   delete texture;
   glfwDestroyWindow(window);

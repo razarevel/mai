@@ -5,8 +5,9 @@
 
 #include "stb_image.h"
 
-FontRenderer::FontRenderer(MAI::Renderer *ren, uint32_t width, uint32_t height)
-    : ren_(ren), screenWidht(width), screenHeight(height) {
+FontRenderer::FontRenderer(MAI::Renderer *ren, uint32_t width, uint32_t height,
+                           VkFormat format)
+    : ren_(ren), screenWidht(width), screenHeight(height), format(format) {
   loadFonts();
   loadResources();
 }
@@ -79,7 +80,7 @@ void FontRenderer::loadResources() {
 
   vert_ = ren_->createShader(CURRENT_DIR "shaders/font.vert");
   frag_ = ren_->createShader(CURRENT_DIR "shaders/font.frag");
-  pipeline_ = ren_->createPipeline({
+  MAI::PipelineInfo piplineInfo = {
       .vert = vert_,
       .frag = frag_,
       .color =
@@ -88,7 +89,11 @@ void FontRenderer::loadResources() {
               .srcColorBlend = MAI::Src_Alpha,
               .dstColorBlend = MAI::Minus_Src_Alpha,
           },
-  });
+  };
+  if (format != VK_FORMAT_UNDEFINED)
+    piplineInfo.depthFormat = format;
+
+  pipeline_ = ren_->createPipeline(piplineInfo);
   delete vert_;
   delete frag_;
 }
@@ -177,7 +182,7 @@ void FontRenderer::drawDynamicText(MAI::CommandBuffer *buff, const char *text,
 }
 
 void FontRenderer::draw(MAI::CommandBuffer *buff) {
-  if (!buffer_) {
+  if (!buffer_ && !verticesAll.empty()) {
     buffer_ = ren_->createBuffer({
         .usage = MAI::StorageBuffer,
         .storage = MAI::StorageType_Device,
@@ -189,14 +194,17 @@ void FontRenderer::draw(MAI::CommandBuffer *buff) {
     glm::mat4 proj;
     uint32_t textureId;
     uint64_t vertices;
-  } pc = {
+  } pc;
+  pc = {
       .proj = glm::ortho(0.0f, float(screenWidht), 0.0f, float(screenHeight)),
       .textureId = texture->getIndex(),
-      .vertices = ren_->gpuAddress(buffer_),
   };
-  buff->bindPipeline(pipeline_);
-  buff->cmdPushConstant(&pc);
-  buff->cmdDraw(verticesAll.size());
+  if (!verticesAll.empty()) {
+    pc.vertices = ren_->gpuAddress(buffer_);
+    buff->bindPipeline(pipeline_);
+    buff->cmdPushConstant(&pc);
+    buff->cmdDraw(verticesAll.size());
+  }
 
   for (auto &it : dynamicBuffers) {
     pc.vertices = ren_->gpuAddress(it.second.buffer);
