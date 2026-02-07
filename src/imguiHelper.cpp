@@ -67,23 +67,33 @@ void ImGuiRenderer::endFrame(MAI::CommandBuffer *buff) {
         continue;
       case ImTextureStatus_Destroyed:
         continue;
-      case ImTextureStatus_WantCreate: {
-        MAI::Texture *texture = ren_->createImage({
+      case ImTextureStatus_WantCreate:
+        pimpl_->textures_.emplace_back(ren_->createImage({
             .type = MAI::TextureType_2D,
             .format = MAI::Format_RGBA_S8,
             .dimensions = {(uint32_t)tex->Width, (uint32_t)tex->Height},
             .data = tex->Pixels,
             .usage = MAI::Sampled_Bit,
-        });
-        tex->SetTexID((ImTextureID)texture->getIndex());
+        }));
+        tex->SetTexID((ImTextureID)pimpl_->textures_.back()->getIndex());
         tex->SetStatus(ImTextureStatus_OK);
-        pimpl_->textures_.emplace_back(texture);
+        continue;
+      case ImTextureStatus_WantUpdates: {
+        MAI::Texture *texture = nullptr;
+        for (auto *it : pimpl_->textures_)
+          if (it->getIndex() == tex->GetTexID())
+            texture = it;
+        assert(texture);
+        buff->update(texture,
+                     {
+                         .offset = {tex->UpdateRect.x, tex->UpdateRect.y, 0},
+                         .extent = {tex->UpdateRect.w, tex->UpdateRect.h, 1},
+                     },
+                     tex->GetPixelsAt(tex->UpdateRect.x, tex->UpdateRect.y),
+                     tex->Width);
+        tex->SetStatus(ImTextureStatus_OK);
         continue;
       }
-      case ImTextureStatus_WantUpdates:
-        std::cerr << "imgui wants to update the texture" << std::endl;
-        assert(false);
-        continue;
       case ImTextureStatus_WantDestroy:
         std::cerr << "imgui wants to destroy the texture" << std::endl;
         assert(false);
@@ -110,6 +120,7 @@ void ImGuiRenderer::endFrame(MAI::CommandBuffer *buff) {
   frameIndex = (frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
 
   if (drawableData.numAllocateIndices_ < dd->TotalIdxCount) {
+    delete drawableData.ib_;
     drawableData.ib_ = ren_->createBuffer({
         .usage = MAI::IndexBuffer,
         .storage = MAI::HostVisible,
@@ -119,6 +130,7 @@ void ImGuiRenderer::endFrame(MAI::CommandBuffer *buff) {
   }
 
   if (drawableData.numAllocateVertices_ < dd->TotalVtxCount) {
+    delete drawableData.vb_;
     drawableData.vb_ = ren_->createBuffer({
         .usage = MAI::StorageBuffer,
         .storage = MAI::HostVisible,
@@ -219,6 +231,4 @@ ImGuiRenderer::~ImGuiRenderer() {
   delete pipeline_;
   ImGui_ImplGlfw_Shutdown();
   ImGui::DestroyContext();
-
-  delete pimpl_;
 }

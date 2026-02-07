@@ -5,7 +5,8 @@
     "glfw3",
     "vulkan-memory-allocator",
 		"glslang",
-		"assimp"
+		"assimp",
+		"imguizmo"
   ]
 }
 

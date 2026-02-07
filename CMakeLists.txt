@@ -19,7 +19,9 @@ find_package(glfw3 CONFIG REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
 find_package(glslang CONFIG REQUIRED)
+find_package(imguizmo CONFIG REQUIRED)
 add_subdirectory(thirdParty/imgui)
+add_subdirectory(thirdParty/implot)
 
 
 file(GLOB_RECURSE MY_SOURCES CONFIGURE_DEPENDS
@@ -38,6 +40,8 @@ target_include_directories(mai
         "${CMAKE_CURRENT_SOURCE_DIR}/mai"
     PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/thirdParty/imgui"
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/thirdParty/implot"
     PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
@@ -51,6 +55,8 @@ target_link_libraries(mai
 		glslang::SPIRV 
 		assimp::assimp
 		imgui
+		implot
+		imguizmo::imguizmo
 )
 
 add_subdirectory(examples/1.helloWorld)

@@ -293,7 +293,8 @@ struct VulkanContext {
                              uint32_t layerCount);
   void copyBuffeToImage(VkBuffer buffer, VkImage image, uint32_t width,
                         uint32_t height, bool isCube);
-
+  void copyBuffeToImage(VkBuffer buffer, VkImage image, VkRect2D imageRegion,
+                        uint32_t bufferRowLength);
   void updateDescriptorImageWrite(VkImageView imageView, VkSampler sampler,
                                   uint32_t imageIndex, bool isCubemap = false);
 
@@ -386,6 +387,8 @@ struct CommandBuffer {
   void cmdDispatchThreadGroups(const struct DispatchThreadInfo &info);
 
   void update(struct Buffer *buffer, const void *data, size_t size);
+  void update(struct Texture *texture, const struct TextureRangeDesc &range,
+              const void *data, uint32_t bufferRowLength);
 
   Pipeline *lastBindPipline = nullptr;
   Pipeline *lastBindComputePipeline = nullptr;
@@ -415,6 +418,11 @@ struct DispatchThreadInfo {
   uint32_t width = 1;
   uint32_t height = 1;
   uint32_t depth = 1;
+};
+
+struct TextureRangeDesc {
+  VkOffset3D offset;
+  VkExtent3D extent;
 };
 
 struct VertexAttribute {
@@ -1906,6 +1914,75 @@ void CommandBuffer::update(struct Buffer *buffer, const void *data,
   }
 }
 
+void CommandBuffer::update(struct Texture *texture,
+                           const struct TextureRangeDesc &range,
+                           const void *data, uint32_t bufferRowLength) {
+  const VkRect2D imageRegion = {
+      .offset = {.x = range.offset.x, .y = range.offset.y},
+      .extent = {.width = range.extent.width, .height = range.extent.height},
+  };
+  VkDeviceSize imageSize = bufferRowLength * range.extent.height * 4;
+  uint32_t layerCount = 1;
+
+#ifdef MAI_USE_VMA
+  VkBuffer stagingBuffer;
+  VmaAllocation stagingAllocation;
+  VmaAllocationInfo stagingAllocInfo;
+
+  ctx->createBuffer(
+      {
+          .size = imageSize,
+          .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+          .allocflags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                        VMA_ALLOCATION_CREATE_MAPPED_BIT,
+          .memoryUsage = VMA_MEMORY_USAGE_AUTO,
+      },
+      stagingBuffer, stagingAllocation, stagingAllocInfo);
+  memcpy(stagingAllocInfo.pMappedData, data, imageSize);
+
+  ctx->transitionImageLayout(texture->getImage(), VK_FORMAT_R8G8B8A8_SRGB,
+                             VK_IMAGE_LAYOUT_UNDEFINED,
+                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, layerCount);
+
+  ctx->copyBuffeToImage(stagingBuffer, texture->getImage(), imageRegion,
+                        bufferRowLength);
+
+  ctx->transitionImageLayout(texture->getImage(), VK_FORMAT_R8G8B8A8_SRGB,
+                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                             layerCount);
+
+  vmaDestroyBuffer(ctx->allocator, stagingBuffer, stagingAllocation);
+#else
+  VkBuffer stagingBuffer;
+  VkDeviceMemory stagingMemory;
+
+  ctx->createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                    stagingBuffer, stagingMemory);
+
+  void *ptr;
+  vkMapMemory(ctx->device, stagingMemory, 0, imageSize, 0, &ptr);
+  memcpy(ptr, data, static_cast<size_t>(imageSize));
+  vkUnmapMemory(ctx->device, stagingMemory);
+  ctx->transitionImageLayout(texture->getImage(), VK_FORMAT_R8G8B8A8_SRGB,
+                             VK_IMAGE_LAYOUT_UNDEFINED,
+                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, layerCount);
+
+  ctx->copyBuffeToImage(stagingBuffer, texture->getImage(), imageRegion,
+                        bufferRowLength);
+
+  ctx->transitionImageLayout(texture->getImage(), VK_FORMAT_R8G8B8A8_SRGB,
+                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                             layerCount);
+
+  vkDestroyBuffer(ctx->device, stagingBuffer, nullptr);
+  vkFreeMemory(ctx->device, stagingMemory, nullptr);
+#endif
+}
+
 void Renderer::waitDeviceIdle() { vkDeviceWaitIdle(ctx->device); }
 
 void Renderer::submit() {
@@ -2623,7 +2700,6 @@ void VulkanContext::copyBuffeToImage(VkBuffer buffer, VkImage image,
         .bufferOffset = 0,
         .bufferRowLength = 0,
         .bufferImageHeight = 0,
-
         .imageSubresource =
             {
                 .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -2659,6 +2735,29 @@ void VulkanContext::copyBuffeToImage(VkBuffer buffer, VkImage image,
         commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         static_cast<uint32_t>(regions.size()), regions.data());
   }
+
+  endSingleCommandBuffer(commandBuffer);
+}
+
+void VulkanContext::copyBuffeToImage(VkBuffer buffer, VkImage image,
+                                     VkRect2D imageRegion,
+                                     uint32_t bufferRowLength) {
+  VkCommandBuffer commandBuffer = beginSingleCommandBuffer();
+  VkBufferImageCopy region = {
+      .bufferOffset = 0,
+      .bufferRowLength = bufferRowLength,
+      .imageSubresource =
+          {
+              .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+              .mipLevel = 0,
+              .baseArrayLayer = 0,
+              .layerCount = 1,
+          },
+      .imageOffset = {imageRegion.offset.x, imageRegion.offset.y, 0},
+      .imageExtent = {imageRegion.extent.width, imageRegion.extent.height, 1},
+  };
+  vkCmdCopyBufferToImage(commandBuffer, buffer, image,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
   endSingleCommandBuffer(commandBuffer);
 }
