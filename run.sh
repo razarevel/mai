@@ -1,1 +1,1 @@
-cmake --build build && ./build/examples/4.textures/texture
+cmake --build build && ./build/examples/lighting/lighting

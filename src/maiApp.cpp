@@ -11,22 +11,29 @@ struct MouseState {
   bool presedLeft = false;
 } mouseState;
 
-MaiApp::MaiApp() {
+MaiApp::MaiApp(const MaiAppInfo &info) : info_(info) {
   camera = new Camera(positioner);
   windowInfo = {
-      .width = 1200,
-      .height = 800,
-      .appName = "Demo Game",
+      .width = info.width,
+      .height = info.height,
+      .appName = info.appName,
   };
   window = MAI::initWindow(windowInfo);
-  ren = MAI::initVulkanWithSwapChain(window, windowInfo.appName);
+  ren = MAI::initVulkanWithSwapChain(
+      window, windowInfo.appName,
+      {
+          .defaultDescriptorPool = info.defaultDescriptorPool,
+          .enablePipelineCache = info.pipelineCaching,
+      });
 
-  depthTexture = ren->createImage({
-      .type = MAI::TextureType_2D,
-      .format = MAI::Format_Z_F32,
-      .dimensions = {(uint32_t)windowInfo.width, windowInfo.height},
-      .usage = MAI::Attachment_Bit,
-  });
+  if (info.enableDepthTexture) {
+    depthTexture = ren->createImage({
+        .type = MAI::TextureType_2D,
+        .format = MAI::Format_Z_F32,
+        .dimensions = {(uint32_t)windowInfo.width, windowInfo.height},
+        .usage = MAI::Attachment_Bit,
+    });
+  }
 
   setMouseConfig();
   setKeyboardConfig();
@@ -101,7 +108,9 @@ void MaiApp::run(DrawFrameFunc drawFrame, DrawFrameFunc beforeDraw,
 
     MAI::CommandBuffer *buff = ren->acquireCommandBuffer();
     beforeDraw(buff, width, height, ratio, deltaSecond);
-    buff->cmdBeginRendering({});
+    buff->cmdBeginRendering({
+        .texture = info_.enableDepthTexture ? depthTexture : nullptr,
+    });
     drawFrame(buff, width, height, ratio, deltaSecond);
     buff->cmdEndRendering();
     ren->submit();
@@ -113,7 +122,8 @@ void MaiApp::run(DrawFrameFunc drawFrame, DrawFrameFunc beforeDraw,
 
 MaiApp::~MaiApp() {
   delete camera;
-  delete depthTexture;
+  if (info_.enableDepthTexture)
+    delete depthTexture;
   glfwDestroyWindow(window);
   glfwTerminate();
   delete ren;

@@ -26,11 +26,21 @@ public:
   float currentFPS_ = 0.0f;
 };
 
+struct MaiAppInfo {
+  uint32_t width;
+  uint32_t height;
+  const char *appName;
+  bool enableDepthTexture = true;
+  bool defaultDescriptorPool = true;
+  bool pipelineCaching = false;
+};
+
 struct MaiApp {
-  MaiApp();
+  MaiApp(const MaiAppInfo &info);
   ~MaiApp();
 
   MAI::WindowInfo windowInfo;
+  MaiAppInfo info_;
   MAI::Renderer *ren = nullptr;
   GLFWwindow *window = nullptr;
   MAI::Texture *depthTexture = nullptr;

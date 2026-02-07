@@ -6,3 +6,7 @@ file(GLOB_RECURSE MY_SOURCES CONFIGURE_DEPENDS
 
 
 add_library(imgui STATIC ${MY_SOURCES})
+
+target_link_libraries(imgui
+  PRIVATE mai
+)

@@ -12,7 +12,11 @@ using glm::vec3;
 using glm::vec4;
 
 int main() {
-  MaiApp *mai = new MaiApp();
+  MaiApp *mai = new MaiApp({
+      .width = 1200,
+      .height = 800,
+      .appName = "UiTools",
+  });
 
   UITools *tools = new UITools(mai->ren, mai->window);
   FontRenderer *fmt =

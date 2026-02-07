@@ -207,7 +207,6 @@ struct VulkanContext {
   const char *appName;
   uint32_t frameIndex = 0;
   uint32_t imageIndex = 0;
-  uint32_t minImageCount;
   struct RendererDefault defaults;
 
   VkInstance instance;
@@ -345,7 +344,10 @@ struct Renderer {
   void *getMappedPtr(struct Buffer *buffer, uint32_t size = 0);
   void flushMappedMemeory(struct Buffer *buffer, VkDeviceSize offset,
                           VkDeviceSize size);
-  struct VulkanContext *getVulkanContext() { return ctx; }
+  VkColorSpaceKHR &swapChainFormat() { return ctx->swapChainColoSpace; }
+  VkInstance &getInstance() { return ctx->instance; }
+  VkDevice &getDevice() { return ctx->device; }
+  VkQueue &getGraphicsQueue() { return ctx->graphicsQueue; }
 
 private:
   uint32_t lastTextureCount = 0;
@@ -758,7 +760,7 @@ Renderer *initVulkanWithSwapChain(GLFWwindow *window = nullptr,
 
 }; // namespace MAI
 
-#ifdef MAI_IMPLEMENTATION
+// #ifdef MAI_IMPLEMENTATION
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -2291,8 +2293,6 @@ void VulkanContext::createSwapChain() {
   if (swapChainDetails.capabilities.maxImageCount > 0 &&
       imageCount < swapChainDetails.capabilities.maxImageCount)
     imageCount = swapChainDetails.capabilities.maxImageCount;
-
-  minImageCount = imageCount;
 
   VkSwapchainCreateInfoKHR createInfo{
       .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
